@@ -9,6 +9,7 @@ description: Upload local folders, skills, config lists, or source-code projects
 
 Use this skill when local `gh` or `git push` setup is missing, but the user is already logged into GitHub in Google Chrome.
 The workflow exports GitHub cookies from Chrome, launches a separate automated Chrome window, optionally creates a repository, then writes the local project tree into GitHub through the web UI.
+When the target repository already has the same file content, the uploader skips that file instead of creating a redundant commit.
 
 ## Best Fit
 
@@ -64,7 +65,8 @@ python3 scripts/github_upload.py \
   - `.pydeps/`
 - Treats the source as a text-first tree.
 - Creates missing files in GitHub or edits existing ones in place.
-- Creates one commit per file for reliability in the web UI.
+- Skips unchanged files when the remote and local contents already match.
+- Creates one commit per changed file for reliability in the web UI.
 
 ## Guardrails
 
