@@ -149,6 +149,13 @@ function encodeRepoPath(repoPath) {
     .join("/");
 }
 
+function normalizeContentForCompare(content) {
+  return String(content)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\n+$/g, "");
+}
+
 async function openEditorForPath(page, repoBase, repoPath) {
   const editUrl = `${repoBase}/edit/main/${encodeRepoPath(repoPath)}`;
   await navigate(page, editUrl);
@@ -171,7 +178,13 @@ async function openEditorForPath(page, repoBase, repoPath) {
 }
 
 async function commitCurrentPage(page, message) {
-  await page.getByRole("button", { name: /^Commit changes/i }).last().click();
+  const commitLauncher = page.getByRole("button", { name: /^Commit changes/i }).last();
+  const disabled = await commitLauncher.getAttribute("disabled");
+  const ariaDisabled = await commitLauncher.getAttribute("aria-disabled");
+  if (disabled !== null || ariaDisabled === "true") {
+    return false;
+  }
+  await commitLauncher.click();
   await page.waitForTimeout(900);
   const summaryInput = page.locator("#commit-summary-input").first();
   if ((await summaryInput.count()) > 0 && message) {
@@ -180,16 +193,34 @@ async function commitCurrentPage(page, message) {
   await page.getByRole("button", { name: /^Commit changes$/ }).first().click();
   await page.waitForLoadState("domcontentloaded");
   await page.waitForTimeout(1800);
+  return true;
 }
 
 async function uploadFile(page, repoBase, entry) {
   const mode = await openEditorForPath(page, repoBase, entry.repo_path);
   const editor = page.locator('[contenteditable="true"][role="textbox"]').first();
+
+  if (mode === "edit") {
+    const remoteContent = await editor.evaluate((el) => el.textContent || "");
+    if (
+      normalizeContentForCompare(remoteContent) ===
+      normalizeContentForCompare(entry.content)
+    ) {
+      return { repo_path: entry.repo_path, mode: "skip" };
+    }
+  }
+
   await editor.click();
   await editor.fill(entry.content);
   await page.waitForTimeout(500);
   const message = `${mode === "edit" ? "Update" : "Create"} ${entry.repo_path.split("/").pop()}`;
-  await commitCurrentPage(page, message);
+  const committed = await commitCurrentPage(page, message);
+  if (!committed) {
+    if (mode === "edit") {
+      return { repo_path: entry.repo_path, mode: "skip" };
+    }
+    fail(`GitHub kept the commit button disabled for new file: ${entry.repo_path}`);
+  }
   return { repo_path: entry.repo_path, mode };
 }
 
@@ -261,8 +292,14 @@ async function main() {
     }
 
     const uploaded = [];
+    const skipped = [];
     for (const entry of files) {
-      uploaded.push(await uploadFile(page, repoBase, entry));
+      const result = await uploadFile(page, repoBase, entry);
+      if (result.mode === "skip") {
+        skipped.push(result);
+      } else {
+        uploaded.push(result);
+      }
     }
 
     await navigate(page, repoBase);
@@ -276,7 +313,9 @@ async function main() {
           repo_name: args.repoName,
           repo_url: repoBase,
           uploaded_count: uploaded.length,
+          skipped_count: skipped.length,
           uploaded,
+          skipped,
           skipped_binary: skippedBinary,
         },
         null,
