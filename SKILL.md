@@ -42,6 +42,14 @@ python3 scripts/github_upload.py \
   --source /absolute/path/config-list \
   --repo-name config-list \
   --dry-run
+
+python3 scripts/github_upload.py \
+  --source /absolute/path/project \
+  --repo-owner my-user \
+  --repo-name scripts-only \
+  --include-dir scripts \
+  --include-ext .py \
+  --summary-only
 ```
 
 ## Workflow
@@ -50,8 +58,10 @@ python3 scripts/github_upload.py \
 2. Point `--source` at the local folder to publish.
 3. Use `--create-repo` when the target repo does not exist yet.
 4. Default to `private` unless the user explicitly wants a public repo.
-5. Run `--dry-run` first when you want to verify login and the upload plan without creating commits.
-6. Read the returned JSON and share the final repository URL.
+5. Use `--include-ext` and `--include-dir` when only part of the source tree should be uploaded.
+6. Run `--summary-only` when you want a local upload summary before opening Chrome.
+7. Run `--dry-run` when you want to verify login and the upload plan without creating commits.
+8. Read the returned JSON and share the final repository URL.
 
 ## Behavior
 
@@ -64,6 +74,7 @@ python3 scripts/github_upload.py \
   - `.DS_Store`
   - `.pydeps/`
 - Treats the source as a text-first tree.
+- Can restrict the upload set by file extension or subdirectory.
 - Creates missing files in GitHub or edits existing ones in place.
 - Skips unchanged files when the remote and local contents already match.
 - Creates one commit per changed file for reliability in the web UI.
