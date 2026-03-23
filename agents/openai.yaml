@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub Web Uploader"
+  short_description: "Upload local folders to GitHub from Chrome"
+  default_prompt: "Use $github-web-uploader to create a GitHub repo and upload a local skill, config folder, or source tree from my logged-in Chrome session."
