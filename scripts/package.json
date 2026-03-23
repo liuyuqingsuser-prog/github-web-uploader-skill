@@ -1,0 +1,7 @@
+{
+  "name": "github-web-uploader",
+  "private": true,
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}
