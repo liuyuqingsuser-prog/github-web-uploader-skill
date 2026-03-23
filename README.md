@@ -15,6 +15,8 @@ This skill is useful when:
 - Upload a local text-based folder into that repository
 - Update an existing repository
 - Skip unchanged files when the remote content already matches local content
+- Restrict uploads to selected extensions or subdirectories
+- Generate a local pre-upload summary
 - Reuse the signed-in GitHub session from normal Chrome
 
 ## Best For
@@ -65,6 +67,28 @@ python3 scripts/github_upload.py \
   --repo-name github-web-uploader-skill
 ```
 
+Only upload Python files inside `scripts/`:
+
+```bash
+python3 scripts/github_upload.py \
+  --source /absolute/path/project \
+  --repo-owner liuyuqingsuser-prog \
+  --repo-name project-scripts \
+  --include-dir scripts \
+  --include-ext .py
+```
+
+Generate an upload summary before opening Chrome:
+
+```bash
+python3 scripts/github_upload.py \
+  --source /absolute/path/project \
+  --repo-owner liuyuqingsuser-prog \
+  --repo-name project-preview \
+  --include-ext .md \
+  --summary-only
+```
+
 ## Default Excludes
 
 These path components are skipped automatically:
@@ -77,6 +101,18 @@ These path components are skipped automatically:
 
 You can add more with repeated `--exclude name`.
 
+## Include Filters
+
+Use `--include-ext` to limit by suffix and `--include-dir` to limit by repo-relative subdirectory.
+
+Examples:
+
+- `--include-ext .py --include-ext .md`
+- `--include-dir scripts`
+- `--include-dir agents --include-dir scripts`
+
+If both are present, a file must satisfy both filters.
+
 ## Output
 
 The script prints JSON with:
@@ -84,6 +120,7 @@ The script prints JSON with:
 - repository URL
 - uploaded file count
 - skipped unchanged file count
+- filtered-out files when include filters are active
 - binary files skipped from the local scan
 
 ## Files
