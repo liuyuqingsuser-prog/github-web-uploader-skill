@@ -119,9 +119,48 @@ def should_exclude(path: Path, source_root: Path, extra_excludes: set[str]) -> b
     return any(part in all_excludes for part in rel_parts)
 
 
-def collect_files(source_root: Path, skip_binary: bool, extra_excludes: set[str]) -> dict[str, Any]:
+def normalize_extensions(values: list[str]) -> set[str]:
+    normalized = set()
+    for value in values:
+        item = value.strip().lower()
+        if not item:
+            continue
+        if not item.startswith("."):
+            item = f".{item}"
+        normalized.add(item)
+    return normalized
+
+
+def normalize_include_dirs(values: list[str]) -> list[str]:
+    normalized = []
+    for value in values:
+        item = value.strip().strip("/")
+        if item:
+            normalized.append(item)
+    return normalized
+
+
+def matches_include_filters(repo_path: str, path: Path, include_exts: set[str], include_dirs: list[str]) -> bool:
+    if include_exts and path.suffix.lower() not in include_exts:
+        return False
+    if include_dirs:
+        return any(
+            repo_path == include_dir or repo_path.startswith(f"{include_dir}/")
+            for include_dir in include_dirs
+        )
+    return True
+
+
+def collect_files(
+    source_root: Path,
+    skip_binary: bool,
+    extra_excludes: set[str],
+    include_exts: set[str],
+    include_dirs: list[str],
+) -> dict[str, Any]:
     entries = []
     skipped_binary = []
+    skipped_filtered = []
 
     for path in sorted(source_root.rglob("*")):
         if not path.is_file():
@@ -129,6 +168,9 @@ def collect_files(source_root: Path, skip_binary: bool, extra_excludes: set[str]
         if should_exclude(path, source_root, extra_excludes):
             continue
         repo_path = path.relative_to(source_root).as_posix()
+        if not matches_include_filters(repo_path, path, include_exts, include_dirs):
+            skipped_filtered.append(repo_path)
+            continue
         if is_text_file(path):
             entries.append(
                 {
@@ -146,7 +188,40 @@ def collect_files(source_root: Path, skip_binary: bool, extra_excludes: set[str]
             + "\n".join(skipped_binary[:30])
         )
 
-    return {"files": entries, "skipped_binary": skipped_binary}
+    return {
+        "files": entries,
+        "skipped_binary": skipped_binary,
+        "skipped_filtered": skipped_filtered,
+        "include_exts": sorted(include_exts),
+        "include_dirs": include_dirs,
+    }
+
+
+def build_summary(
+    source_root: Path,
+    repo_owner: str,
+    repo_name: str,
+    manifest: dict[str, Any],
+    create_repo: bool,
+    visibility: str,
+) -> dict[str, Any]:
+    files = manifest["files"]
+    return {
+        "ok": 1,
+        "summary_only": True,
+        "source": str(source_root),
+        "repo_owner": repo_owner,
+        "repo_name": repo_name,
+        "repo_url": f"https://github.com/{repo_owner}/{repo_name}" if repo_owner else "",
+        "create_repo": create_repo,
+        "visibility": visibility,
+        "file_count": len(files),
+        "files": [entry["repo_path"] for entry in files],
+        "include_exts": manifest.get("include_exts", []),
+        "include_dirs": manifest.get("include_dirs", []),
+        "skipped_binary": manifest.get("skipped_binary", []),
+        "skipped_filtered": manifest.get("skipped_filtered", []),
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -165,12 +240,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--create-repo", action="store_true", help="Create the repository if it does not exist.")
     parser.add_argument("--dry-run", action="store_true", help="Validate login and upload plan without creating commits.")
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Print a local upload summary and stop before opening Chrome.",
+    )
     parser.add_argument("--skip-binary", action="store_true", help="Skip binary or non-UTF-8 files instead of failing.")
     parser.add_argument(
         "--exclude",
         action="append",
         default=[],
         help="Additional path component to exclude. Repeatable.",
+    )
+    parser.add_argument(
+        "--include-ext",
+        action="append",
+        default=[],
+        help="Only include files with this extension. Repeatable. Example: --include-ext .py",
+    )
+    parser.add_argument(
+        "--include-dir",
+        action="append",
+        default=[],
+        help="Only include files under this repo-relative subdirectory. Repeatable. Example: --include-dir scripts",
     )
     parser.add_argument(
         "--chrome-path",
@@ -193,13 +285,34 @@ def main() -> None:
     ensure_python_dependencies()
     ensure_node_dependencies()
 
+    include_exts = normalize_extensions(args.include_ext)
+    include_dirs = normalize_include_dirs(args.include_dir)
     manifest = collect_files(
         source_root=source_root,
         skip_binary=args.skip_binary,
         extra_excludes={item.strip() for item in args.exclude if item.strip()},
+        include_exts=include_exts,
+        include_dirs=include_dirs,
     )
     if not manifest["files"]:
         fail("No eligible text files were found to upload.")
+
+    if args.summary_only:
+        print(
+            json.dumps(
+                build_summary(
+                    source_root=source_root,
+                    repo_owner=args.repo_owner,
+                    repo_name=args.repo_name,
+                    manifest=manifest,
+                    create_repo=args.create_repo,
+                    visibility=args.visibility,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
 
     MANIFEST_PATH.write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
     cookie_path = export_github_cookies(COOKIE_EXPORT_PATH)
